@@ -19,11 +19,29 @@ func init() {
 type XMLNode interface {
 	toxml(map[string]bool) string
 	setParent(XMLNode)
+	Children() []XMLNode
 }
 
 // Appender implements the function Append(XMLNode)
 type Appender interface {
 	Append(n XMLNode)
+}
+
+// Attribute represents an attribute
+type Attribute struct {
+	Name      string
+	Namespace string
+	Prefix    string
+	Value     string
+}
+
+func (a Attribute) String() string {
+	return fmt.Sprintf("%s=%q", a.Name, a.Value)
+}
+
+// Stringvalue returns the attribute value.
+func (a Attribute) Stringvalue() string {
+	return fmt.Sprintf("%s", a.Value)
 }
 
 // Element represents an XML element
@@ -43,6 +61,28 @@ func NewElement() *Element {
 	return &elt
 }
 
+func (elt Element) String() string {
+	var as []string
+	for _, attribs := range elt.Attributes() {
+		as = append(as, attribs.String())
+	}
+	return "<" + elt.Name + " " + strings.Join(as, " ") + ">"
+}
+
+// Stringvalue returns the text nodes of this elements and its children.
+func (elt Element) Stringvalue() string {
+	var as []string
+	for _, cld := range elt.children {
+		switch t := cld.(type) {
+		case CharData:
+			as = append(as, string(t))
+		case *Element:
+			as = append(as, t.Stringvalue())
+		}
+	}
+	return strings.Join(as, "")
+}
+
 // Append appends an XML node to the element.
 func (elt *Element) Append(n XMLNode) {
 	// combine string cdata string if necessary
@@ -60,6 +100,19 @@ func (elt *Element) Append(n XMLNode) {
 // Children returns all child nodes from elt
 func (elt *Element) Children() []XMLNode {
 	return elt.children
+}
+
+// Attributes returns all attributes for this element
+func (elt *Element) Attributes() []*Attribute {
+	var attribs []*Attribute
+	for _, xmlattr := range elt.attributes {
+		attr := Attribute{}
+		attr.Name = xmlattr.Name.Local
+		attr.Value = xmlattr.Value
+		attr.Namespace = xmlattr.Name.Space
+		attribs = append(attribs, &attr)
+	}
+	return attribs
 }
 
 func (elt *Element) setParent(n XMLNode) {
@@ -119,6 +172,11 @@ func (cd CharData) setParent(n XMLNode) {
 	// dummy
 }
 
+// Children is a dummy function
+func (cd CharData) Children() []XMLNode {
+	return nil
+}
+
 // Comment is a string
 type Comment string
 
@@ -129,6 +187,11 @@ func (cmt Comment) toxml(namespacePrinted map[string]bool) string {
 
 func (cmt Comment) setParent(n XMLNode) {
 	// dummy
+}
+
+// Children is a dummy function
+func (cmt Comment) Children() []XMLNode {
+	return nil
 }
 
 // ProcInst is a string
@@ -146,9 +209,18 @@ func (pi ProcInst) setParent(n XMLNode) {
 	// dummy
 }
 
+// Children is a dummy function
+func (pi ProcInst) Children() []XMLNode {
+	return nil
+}
+
 // XMLDocument represents an XML file for decoding
 type XMLDocument struct {
 	children []XMLNode
+}
+
+func (xr XMLDocument) String() string {
+	return "<xmldoc>"
 }
 
 // Append appends an XML node to the document.
