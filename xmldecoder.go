@@ -1,10 +1,11 @@
 package goxml
 
 import (
-	"encoding/xml"
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/speedata/goxml/xml"
 )
 
 var (
@@ -52,6 +53,8 @@ type Element struct {
 	Namespaces map[string]string
 	children   []XMLNode
 	attributes []xml.Attr
+	Line       int
+	Pos        int
 }
 
 // NewElement returns an initialized Element.
@@ -289,6 +292,7 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 					tmp.Namespaces[k] = v
 				}
 			}
+			tmp.Line, tmp.Pos = dec.InputPos()
 			tmp.Name = v.Name.Local
 			tmp.Parent = cur
 
