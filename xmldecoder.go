@@ -45,6 +45,20 @@ func (a Attribute) Stringvalue() string {
 	return fmt.Sprintf("%s", a.Value)
 }
 
+// Children returns the empty sequence.
+func (a Attribute) Children() []XMLNode {
+	return nil
+}
+
+func (a Attribute) setParent(n XMLNode) {
+	panic("nyi")
+}
+
+// toxml returns the XML representation of the attribute.
+func (a Attribute) toxml(namespacePrinted map[string]bool) string {
+	panic("nyi")
+}
+
 // Element represents an XML element
 type Element struct {
 	Name       string
@@ -88,11 +102,24 @@ func (elt Element) Stringvalue() string {
 
 // Append appends an XML node to the element.
 func (elt *Element) Append(n XMLNode) {
-	// combine string cdata string if necessary
-	if cd, ok := n.(CharData); ok {
+	switch t := n.(type) {
+	case Attribute:
+		for _, attr := range elt.attributes {
+			if attr.Name.Local == t.Name && attr.Name.Space == t.Namespace {
+				attr.Value = t.Value
+				return
+			}
+		}
+		elt.attributes = append(elt.attributes, xml.Attr{
+			Name:  xml.Name{Local: t.Name, Space: t.Namespace},
+			Value: t.Value,
+		})
+		return
+	case CharData:
+		// combine string cdata string if necessary
 		if l := len(elt.children); l > 0 {
 			if str, ok := elt.children[l-1].(CharData); ok {
-				elt.children[l-1] = CharData(string(str) + string(cd))
+				elt.children[l-1] = CharData(string(str) + string(t))
 				return
 			}
 		}
@@ -101,12 +128,12 @@ func (elt *Element) Append(n XMLNode) {
 }
 
 // Children returns all child nodes from elt
-func (elt *Element) Children() []XMLNode {
+func (elt Element) Children() []XMLNode {
 	return elt.children
 }
 
 // Attributes returns all attributes for this element
-func (elt *Element) Attributes() []*Attribute {
+func (elt Element) Attributes() []*Attribute {
 	var attribs []*Attribute
 	for _, xmlattr := range elt.attributes {
 		attr := Attribute{}
@@ -118,16 +145,16 @@ func (elt *Element) Attributes() []*Attribute {
 	return attribs
 }
 
-func (elt *Element) setParent(n XMLNode) {
+func (elt Element) setParent(n XMLNode) {
 	elt.Parent = n
 }
 
 // ToXML returns a valid XML document
-func (elt *Element) ToXML() string {
+func (elt Element) ToXML() string {
 	return elt.toxml(make(map[string]bool))
 }
 
-func (elt *Element) toxml(namespacePrinted map[string]bool) string {
+func (elt Element) toxml(namespacePrinted map[string]bool) string {
 	var sb strings.Builder
 	sb.WriteRune('<')
 	eltname := elt.Name
