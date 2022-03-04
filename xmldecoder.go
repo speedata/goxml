@@ -3,24 +3,57 @@ package goxml
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/speedata/goxml/xml"
 )
 
 var (
-	entitiesReplacer *strings.Replacer
+	entitiesReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", "\"", "&quot;")
+	ids              chan int
 )
 
+func genIntegerSequence(ids chan int) {
+	i := int(0)
+	for {
+		ids <- i
+		i++
+	}
+}
+
 func init() {
-	entitiesReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", "\"", "&quot;")
+	ids = make(chan int)
+	go genIntegerSequence(ids)
 }
 
 // XMLNode is one of Document, Element, CharData, ProcInst, Comment
 type XMLNode interface {
 	toxml(map[string]bool) string
 	setParent(XMLNode)
+	getID() int
 	Children() []XMLNode
+}
+
+// SortAndEliminateDuplicates returns the nodes sorted in document order and
+// dupliacates deleted.
+func (xn SortByDocumentOrder) SortAndEliminateDuplicates() SortByDocumentOrder {
+	sort.Sort(xn)
+	if len(xn) < 2 {
+		return xn
+	}
+
+	var e int = 1
+	for i := 1; i < len(xn); i++ {
+
+		if xn[i].getID() == xn[i-1].getID() {
+			continue
+		}
+		xn[e] = xn[i]
+		e++
+	}
+
+	return xn[:e]
 }
 
 // Appender implements the function Append(XMLNode)
@@ -30,6 +63,7 @@ type Appender interface {
 
 // Attribute represents an attribute
 type Attribute struct {
+	ID        int
 	Name      string
 	Namespace string
 	Prefix    string
@@ -54,6 +88,11 @@ func (a Attribute) setParent(n XMLNode) {
 	panic("nyi")
 }
 
+// getID returns the ID of this node
+func (a Attribute) getID() int {
+	return a.ID
+}
+
 // toxml returns the XML representation of the attribute.
 func (a Attribute) toxml(namespacePrinted map[string]bool) string {
 	panic("nyi")
@@ -61,6 +100,7 @@ func (a Attribute) toxml(namespacePrinted map[string]bool) string {
 
 // Element represents an XML element
 type Element struct {
+	ID         int
 	Name       string
 	Prefix     string
 	Parent     XMLNode
@@ -92,7 +132,7 @@ func (elt Element) Stringvalue() string {
 	for _, cld := range elt.children {
 		switch t := cld.(type) {
 		case CharData:
-			as = append(as, string(t))
+			as = append(as, string(t.Contents))
 		case *Element:
 			as = append(as, t.Stringvalue())
 		}
@@ -119,7 +159,7 @@ func (elt *Element) Append(n XMLNode) {
 		// combine string cdata string if necessary
 		if l := len(elt.children); l > 0 {
 			if str, ok := elt.children[l-1].(CharData); ok {
-				elt.children[l-1] = CharData(string(str) + string(t))
+				elt.children[l-1] = CharData{Contents: str.Contents + t.Contents}
 				return
 			}
 		}
@@ -147,6 +187,11 @@ func (elt Element) Attributes() []*Attribute {
 
 func (elt Element) setParent(n XMLNode) {
 	elt.Parent = n
+}
+
+// getID returns the ID of this node
+func (elt Element) getID() int {
+	return elt.ID
 }
 
 // ToXML returns a valid XML document
@@ -191,11 +236,14 @@ func (elt Element) toxml(namespacePrinted map[string]bool) string {
 }
 
 // CharData is a string
-type CharData string
+type CharData struct {
+	ID       int
+	Contents string
+}
 
 // toxml returns the XML representation of the string.
 func (cd CharData) toxml(namespacePrinted map[string]bool) string {
-	return escape(string(cd))
+	return escape(string(cd.Contents))
 }
 
 func (cd CharData) setParent(n XMLNode) {
@@ -207,12 +255,20 @@ func (cd CharData) Children() []XMLNode {
 	return nil
 }
 
+// getID returns the ID of this node
+func (cd CharData) getID() int {
+	return cd.ID
+}
+
 // Comment is a string
-type Comment string
+type Comment struct {
+	ID       int
+	Contents string
+}
 
 // toxml returns the XML representation of the comment.
 func (cmt Comment) toxml(namespacePrinted map[string]bool) string {
-	return fmt.Sprintf("<!--%s-->", string(cmt))
+	return fmt.Sprintf("<!--%s-->", cmt.Contents)
 }
 
 func (cmt Comment) setParent(n XMLNode) {
@@ -224,8 +280,14 @@ func (cmt Comment) Children() []XMLNode {
 	return nil
 }
 
+// getID returns the ID of this node
+func (cmt Comment) getID() int {
+	return cmt.ID
+}
+
 // ProcInst is a string
 type ProcInst struct {
+	ID     int
 	Target string
 	Inst   []byte
 }
@@ -244,8 +306,14 @@ func (pi ProcInst) Children() []XMLNode {
 	return nil
 }
 
+// getID returns the ID of this node
+func (pi ProcInst) getID() int {
+	return pi.ID
+}
+
 // XMLDocument represents an XML file for decoding
 type XMLDocument struct {
+	ID       int
 	children []XMLNode
 }
 
@@ -283,6 +351,11 @@ func (xr *XMLDocument) setParent(n XMLNode) {
 	// dummy,TODO error handling: document must not have a parent
 }
 
+// getID returns the ID of this node
+func (xr XMLDocument) getID() int {
+	return xr.ID
+}
+
 // toxml returns the XML representation of the document.
 func (xr *XMLDocument) toxml(namespacePrinted map[string]bool) string {
 	var sb strings.Builder
@@ -298,7 +371,7 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 	var tok xml.Token
 
 	var cur XMLNode
-	doc := &XMLDocument{}
+	doc := &XMLDocument{ID: <-ids}
 	eltstack := []XMLNode{doc}
 	cur = doc
 	dec := xml.NewDecoder(r)
@@ -314,6 +387,7 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 		switch v := tok.(type) {
 		case xml.StartElement:
 			tmp := NewElement()
+			tmp.ID = <-ids
 			if c, ok := cur.(*Element); ok {
 				for k, v := range c.Namespaces {
 					tmp.Namespaces[k] = v
@@ -345,19 +419,19 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 			cur = tmp
 			eltstack = append(eltstack, cur)
 		case xml.CharData:
-			cd := CharData(string(v))
+			cd := CharData{ID: <-ids, Contents: string(v)}
 			if c, ok := cur.(Appender); ok {
 				c.Append(cd)
 			}
 		case xml.ProcInst:
-			pi := ProcInst{}
+			pi := ProcInst{ID: <-ids}
 			pi.Target = v.Copy().Target
 			pi.Inst = v.Copy().Inst
 			if c, ok := cur.(Appender); ok {
 				c.Append(pi)
 			}
 		case xml.Comment:
-			cmt := Comment(string(v))
+			cmt := Comment{ID: <-ids, Contents: string(v)}
 			if c, ok := cur.(Appender); ok {
 				c.Append(cmt)
 			}
@@ -370,4 +444,13 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 
 func escape(in string) string {
 	return entitiesReplacer.Replace(in)
+}
+
+// SortByDocumentOrder sorts the nodes by document order.
+type SortByDocumentOrder []XMLNode
+
+func (xn SortByDocumentOrder) Len() int      { return len(xn) }
+func (xn SortByDocumentOrder) Swap(i, j int) { xn[i], xn[j] = xn[j], xn[i] }
+func (xn SortByDocumentOrder) Less(i, j int) bool {
+	return xn[i].getID() < xn[j].getID()
 }
