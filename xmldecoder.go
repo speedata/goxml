@@ -1,12 +1,11 @@
 package goxml
 
 import (
+	"encoding/xml"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
-
-	"github.com/speedata/goxml/xml"
 )
 
 var (

@@ -1,6 +1,8 @@
+[![Go reference documentation](https://img.shields.io/badge/doc-go%20reference-73FA79)](https://pkg.go.dev/github.com/speedata/goxml)
+
 # Go XML
 
-Go XML is a struct based XML representation for Go. That means, the entire XML
+Go XML is a DOM based XML representation for Go. The entire XML
 file is read into a set of structs and can be accessed without keeping the
 source file open.
 
