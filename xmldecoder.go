@@ -35,7 +35,7 @@ type XMLNode interface {
 }
 
 // SortAndEliminateDuplicates returns the nodes sorted in document order and
-// dupliacates deleted.
+// duplicates deleted.
 func (xn SortByDocumentOrder) SortAndEliminateDuplicates() SortByDocumentOrder {
 	sort.Sort(xn)
 	if len(xn) < 2 {
@@ -44,7 +44,6 @@ func (xn SortByDocumentOrder) SortAndEliminateDuplicates() SortByDocumentOrder {
 
 	var e int = 1
 	for i := 1; i < len(xn); i++ {
-
 		if xn[i].getID() == xn[i-1].getID() {
 			continue
 		}
