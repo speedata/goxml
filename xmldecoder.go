@@ -142,9 +142,9 @@ func (elt Element) Stringvalue() string {
 func (elt *Element) Append(n XMLNode) {
 	switch t := n.(type) {
 	case Attribute:
-		for _, attr := range elt.attributes {
+		for i, attr := range elt.attributes {
 			if attr.Name.Local == t.Name && attr.Name.Space == t.Namespace {
-				attr.Value = t.Value
+				elt.attributes[i].Value = t.Value
 				return
 			}
 		}
@@ -183,7 +183,7 @@ func (elt Element) Attributes() []*Attribute {
 	return attribs
 }
 
-func (elt Element) setParent(n XMLNode) {
+func (elt *Element) setParent(n XMLNode) {
 	elt.Parent = n
 }
 
