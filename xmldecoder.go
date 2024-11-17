@@ -170,6 +170,19 @@ func (elt Element) Children() []XMLNode {
 	return elt.children
 }
 
+// SetAttribute appends attr to the list of attributes of elt. If an attribute
+// of this name already exists, the existing one will be discarded.
+func (elt *Element) SetAttribute(attr xml.Attr) {
+	var newAttributes = make([]xml.Attr, 0, len(elt.attributes)+1)
+	for _, curattr := range elt.attributes {
+		if curattr.Name != attr.Name {
+			newAttributes = append(newAttributes, curattr)
+		}
+	}
+	newAttributes = append(newAttributes, attr)
+	elt.attributes = newAttributes
+}
+
 // Attributes returns all attributes for this element
 func (elt Element) Attributes() []*Attribute {
 	var attribs []*Attribute
