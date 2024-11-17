@@ -74,7 +74,7 @@ func (a Attribute) String() string {
 
 // Stringvalue returns the attribute value.
 func (a Attribute) Stringvalue() string {
-	return fmt.Sprintf("%s", a.Value)
+	return a.Value
 }
 
 // Children returns the empty sequence.
