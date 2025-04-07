@@ -125,7 +125,7 @@ func (elt Element) String() string {
 }
 
 // Stringvalue returns the text nodes of this elements and its children.
-func (elt Element) Stringvalue() string {
+func (elt *Element) Stringvalue() string {
 	var as []string
 	for _, cld := range elt.children {
 		switch t := cld.(type) {
@@ -166,7 +166,7 @@ func (elt *Element) Append(n XMLNode) {
 }
 
 // Children returns all child nodes from elt
-func (elt Element) Children() []XMLNode {
+func (elt *Element) Children() []XMLNode {
 	return elt.children
 }
 
@@ -201,16 +201,16 @@ func (elt *Element) setParent(n XMLNode) {
 }
 
 // getID returns the ID of this node
-func (elt Element) getID() int {
+func (elt *Element) getID() int {
 	return elt.ID
 }
 
 // ToXML returns a valid XML document
-func (elt Element) ToXML() string {
+func (elt *Element) ToXML() string {
 	return elt.toxml(make(map[string]bool))
 }
 
-func (elt Element) toxml(namespacePrinted map[string]bool) string {
+func (elt *Element) toxml(namespacePrinted map[string]bool) string {
 	var sb strings.Builder
 	sb.WriteRune('<')
 	eltname := elt.Name
