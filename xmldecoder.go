@@ -83,7 +83,7 @@ func (a Attribute) Children() []XMLNode {
 }
 
 func (a Attribute) setParent(n XMLNode) {
-	panic("nyi")
+	panic("Attribute setParent: nyi")
 }
 
 // getID returns the ID of this node
@@ -93,7 +93,7 @@ func (a Attribute) getID() int {
 
 // toxml returns the XML representation of the attribute.
 func (a Attribute) toxml(namespacePrinted map[string]bool) string {
-	panic("nyi")
+	return fmt.Sprintf("%s=\"%s\"", a.Name, escape(a.Value))
 }
 
 // Element represents an XML element
@@ -153,6 +153,18 @@ func (elt *Element) Append(n XMLNode) {
 			Value: t.Value,
 		})
 		return
+	case *Attribute:
+		for i, attr := range elt.attributes {
+			if attr.Name.Local == t.Name && attr.Name.Space == t.Namespace {
+				elt.attributes[i].Value = t.Value
+				return
+			}
+		}
+		elt.attributes = append(elt.attributes, xml.Attr{
+			Name:  xml.Name{Local: t.Name, Space: t.Namespace},
+			Value: t.Value,
+		})
+		return
 	case CharData:
 		// combine string cdata string if necessary
 		if l := len(elt.children); l > 0 {
@@ -161,6 +173,16 @@ func (elt *Element) Append(n XMLNode) {
 				return
 			}
 		}
+	case *CharData:
+		// combine string cdata string if necessary
+		if l := len(elt.children); l > 0 {
+			if str, ok := elt.children[l-1].(*CharData); ok {
+				elt.children[l-1] = CharData{Contents: str.Contents + t.Contents}
+				return
+			}
+		}
+	default:
+		// do nothing
 	}
 	elt.children = append(elt.children, n)
 }
@@ -174,10 +196,22 @@ func (elt *Element) Children() []XMLNode {
 // of this name already exists, the existing one will be discarded.
 func (elt *Element) SetAttribute(attr xml.Attr) {
 	var newAttributes = make([]xml.Attr, 0, len(elt.attributes)+1)
+	// add all attributes except the one to be replaced
 	for _, curattr := range elt.attributes {
 		if curattr.Name != attr.Name {
 			newAttributes = append(newAttributes, curattr)
 		}
+	}
+	// add the new attribute
+	if attr.Name.Space != "" {
+		attrPrefix := ""
+		for k, v := range elt.Namespaces {
+			if v == attr.Name.Space {
+				attrPrefix = k
+				break
+			}
+		}
+		attr.Name.Local = attrPrefix + ":" + attr.Name.Local
 	}
 	newAttributes = append(newAttributes, attr)
 	elt.attributes = newAttributes
@@ -191,6 +225,11 @@ func (elt Element) Attributes() []*Attribute {
 		attr.Name = xmlattr.Name.Local
 		attr.Value = xmlattr.Value
 		attr.Namespace = xmlattr.Name.Space
+		for k, v := range elt.Namespaces {
+			if v == xmlattr.Name.Space {
+				attr.Prefix = k
+			}
+		}
 		attribs = append(attribs, &attr)
 	}
 	return attribs
