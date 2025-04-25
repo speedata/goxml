@@ -117,11 +117,7 @@ func NewElement() *Element {
 }
 
 func (elt Element) String() string {
-	var as []string
-	for _, attribs := range elt.Attributes() {
-		as = append(as, attribs.String())
-	}
-	return "<" + elt.Name + " " + strings.Join(as, " ") + ">"
+	return elt.Stringvalue()
 }
 
 // Stringvalue returns the text nodes of this elements and its children.
