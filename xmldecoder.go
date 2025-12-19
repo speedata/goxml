@@ -245,6 +245,15 @@ func (elt *Element) ToXML() string {
 	return elt.toxml(make(map[string]bool))
 }
 
+// InnerXML returns the XML representation of the children of this element.
+func (elt *Element) InnerXML() string {
+	var sb strings.Builder
+	for _, child := range elt.children {
+		sb.WriteString(child.toxml(make(map[string]bool)))
+	}
+	return sb.String()
+}
+
 func (elt *Element) toxml(namespacePrinted map[string]bool) string {
 	var sb strings.Builder
 	sb.WriteRune('<')
