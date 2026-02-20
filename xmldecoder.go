@@ -6,24 +6,16 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 var (
 	entitiesReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", "\"", "&quot;")
-	ids              chan int
+	nextID           atomic.Int64
 )
 
-func genIntegerSequence(ids chan int) {
-	i := int(0)
-	for {
-		ids <- i
-		i++
-	}
-}
-
-func init() {
-	ids = make(chan int)
-	go genIntegerSequence(ids)
+func newID() int {
+	return int(nextID.Add(1))
 }
 
 // XMLNode is one of Document, Element, CharData, ProcInst, Comment
@@ -93,7 +85,7 @@ func (a Attribute) getID() int {
 
 // toxml returns the XML representation of the attribute.
 func (a Attribute) toxml(namespacePrinted map[string]bool) string {
-	return fmt.Sprintf("%s=\"%s\"", a.Name, escape(a.Value))
+	return a.Name + "=\"" + escape(a.Value) + "\""
 }
 
 // Element represents an XML element
@@ -122,16 +114,20 @@ func (elt Element) String() string {
 
 // Stringvalue returns the text nodes of this elements and its children.
 func (elt *Element) Stringvalue() string {
-	var as []string
+	var sb strings.Builder
+	elt.appendStringvalue(&sb)
+	return sb.String()
+}
+
+func (elt *Element) appendStringvalue(sb *strings.Builder) {
 	for _, cld := range elt.children {
 		switch t := cld.(type) {
 		case CharData:
-			as = append(as, string(t.Contents))
+			sb.WriteString(t.Contents)
 		case *Element:
-			as = append(as, t.Stringvalue())
+			t.appendStringvalue(sb)
 		}
 	}
-	return strings.Join(as, "")
 }
 
 // Append appends an XML node to the element.
@@ -263,7 +259,14 @@ func (elt *Element) toxml(namespacePrinted map[string]bool) string {
 	}
 	sb.WriteString(eltname)
 
-	for prefix, ns := range elt.Namespaces {
+	// Sort namespace prefixes for deterministic output.
+	nsPrefixes := make([]string, 0, len(elt.Namespaces))
+	for prefix := range elt.Namespaces {
+		nsPrefixes = append(nsPrefixes, prefix)
+	}
+	sort.Strings(nsPrefixes)
+	for _, prefix := range nsPrefixes {
+		ns := elt.Namespaces[prefix]
 		if _, ok := namespacePrinted[ns]; !ok {
 			namespacePrinted[ns] = true
 			if prefix == "" {
@@ -271,12 +274,20 @@ func (elt *Element) toxml(namespacePrinted map[string]bool) string {
 			} else {
 				prefix = "xmlns:" + prefix
 			}
-			fmt.Fprintf(&sb, " %s=\"%s\"", prefix, ns)
+			sb.WriteByte(' ')
+			sb.WriteString(prefix)
+			sb.WriteString("=\"")
+			sb.WriteString(ns)
+			sb.WriteByte('"')
 		}
 	}
 
 	for _, att := range elt.attributes {
-		fmt.Fprintf(&sb, " %s=\"%s\"", att.Name.Local, escape(att.Value))
+		sb.WriteByte(' ')
+		sb.WriteString(att.Name.Local)
+		sb.WriteString("=\"")
+		sb.WriteString(escape(att.Value))
+		sb.WriteByte('"')
 	}
 	if len(elt.children) == 0 {
 		sb.WriteString(" />")
@@ -286,7 +297,9 @@ func (elt *Element) toxml(namespacePrinted map[string]bool) string {
 	for _, child := range elt.children {
 		sb.WriteString(child.toxml(namespacePrinted))
 	}
-	fmt.Fprintf(&sb, "</%s>", eltname)
+	sb.WriteString("</")
+	sb.WriteString(eltname)
+	sb.WriteByte('>')
 	return sb.String()
 }
 
@@ -323,7 +336,7 @@ type Comment struct {
 
 // toxml returns the XML representation of the comment.
 func (cmt Comment) toxml(namespacePrinted map[string]bool) string {
-	return fmt.Sprintf("<!--%s-->", cmt.Contents)
+	return "<!--" + cmt.Contents + "-->"
 }
 
 func (cmt Comment) setParent(n XMLNode) {
@@ -349,7 +362,7 @@ type ProcInst struct {
 
 // toxml returns the XML representation of the string.
 func (pi ProcInst) toxml(namespacePrinted map[string]bool) string {
-	return fmt.Sprintf("<?%s %s?>", pi.Target, string(pi.Inst))
+	return "<?" + pi.Target + " " + string(pi.Inst) + "?>"
 }
 
 func (pi ProcInst) setParent(n XMLNode) {
@@ -426,7 +439,7 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 	var tok xml.Token
 
 	var cur XMLNode
-	doc := &XMLDocument{ID: <-ids}
+	doc := &XMLDocument{ID: newID()}
 	eltstack := []XMLNode{doc}
 	cur = doc
 	dec := xml.NewDecoder(r)
@@ -442,7 +455,7 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 		switch v := tok.(type) {
 		case xml.StartElement:
 			tmp := NewElement()
-			tmp.ID = <-ids
+			tmp.ID = newID()
 			if c, ok := cur.(*Element); ok {
 				for k, v := range c.Namespaces {
 					tmp.Namespaces[k] = v
@@ -474,19 +487,18 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 			cur = tmp
 			eltstack = append(eltstack, cur)
 		case xml.CharData:
-			cd := CharData{ID: <-ids, Contents: string(v)}
+			cd := CharData{ID: newID(), Contents: string(v)}
 			if c, ok := cur.(Appender); ok {
 				c.Append(cd)
 			}
 		case xml.ProcInst:
-			pi := ProcInst{ID: <-ids}
-			pi.Target = v.Copy().Target
-			pi.Inst = v.Copy().Inst
+			cp := v.Copy()
+			pi := ProcInst{ID: newID(), Target: cp.Target, Inst: cp.Inst}
 			if c, ok := cur.(Appender); ok {
 				c.Append(pi)
 			}
 		case xml.Comment:
-			cmt := Comment{ID: <-ids, Contents: string(v)}
+			cmt := Comment{ID: newID(), Contents: string(v)}
 			if c, ok := cur.(Appender); ok {
 				c.Append(cmt)
 			}
