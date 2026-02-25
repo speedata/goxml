@@ -14,6 +14,57 @@ var (
 	nextID           atomic.Int64
 )
 
+// charsetReader returns a reader that converts the named charset to UTF-8.
+// Supports ISO-8859-1 (Latin-1) and US-ASCII without external dependencies.
+func charsetReader(charset string, input io.Reader) (io.Reader, error) {
+	switch strings.ToLower(charset) {
+	case "iso-8859-1", "latin-1", "latin1":
+		return newLatin1Reader(input), nil
+	case "us-ascii", "ascii":
+		return input, nil
+	case "utf-8":
+		return input, nil
+	default:
+		return nil, fmt.Errorf("unsupported charset: %s", charset)
+	}
+}
+
+// latin1Reader converts ISO-8859-1 encoded bytes to UTF-8.
+type latin1Reader struct {
+	r   io.Reader
+	buf [1024]byte
+}
+
+func newLatin1Reader(r io.Reader) *latin1Reader {
+	return &latin1Reader{r: r}
+}
+
+func (l *latin1Reader) Read(p []byte) (int, error) {
+	// Read raw bytes, then expand each byte >= 0x80 to its 2-byte UTF-8 form.
+	// We read at most half of len(p) raw bytes to guarantee enough room.
+	max := len(p) / 2
+	if max == 0 {
+		max = 1
+	}
+	if max > len(l.buf) {
+		max = len(l.buf)
+	}
+	n, err := l.r.Read(l.buf[:max])
+	j := 0
+	for i := 0; i < n; i++ {
+		b := l.buf[i]
+		if b < 0x80 {
+			p[j] = b
+			j++
+		} else {
+			p[j] = 0xC0 | (b >> 6)
+			p[j+1] = 0x80 | (b & 0x3F)
+			j += 2
+		}
+	}
+	return j, err
+}
+
 func newID() int {
 	return int(nextID.Add(1))
 }
@@ -23,6 +74,8 @@ type XMLNode interface {
 	toxml(map[string]bool) string
 	setParent(XMLNode)
 	getID() int
+	// GetID returns a unique integer identifier for this node.
+	GetID() int
 	Children() []XMLNode
 }
 
@@ -58,6 +111,7 @@ type Attribute struct {
 	Namespace string
 	Prefix    string
 	Value     string
+	Parent    XMLNode
 }
 
 func (a Attribute) String() string {
@@ -75,11 +129,16 @@ func (a Attribute) Children() []XMLNode {
 }
 
 func (a Attribute) setParent(n XMLNode) {
-	panic("Attribute setParent: nyi")
+	// no-op: Parent is set via Attributes() cache
 }
 
 // getID returns the ID of this node
 func (a Attribute) getID() int {
+	return a.ID
+}
+
+// GetID returns the ID of this node.
+func (a Attribute) GetID() int {
 	return a.ID
 }
 
@@ -97,6 +156,7 @@ type Element struct {
 	Namespaces map[string]string
 	children   []XMLNode
 	attributes []xml.Attr
+	attrCache  []*Attribute // cached Attribute objects with stable IDs
 	Line       int
 	Pos        int
 }
@@ -197,33 +257,48 @@ func (elt *Element) SetAttribute(attr xml.Attr) {
 	// add the new attribute
 	if attr.Name.Space != "" {
 		attrPrefix := ""
-		for k, v := range elt.Namespaces {
-			if v == attr.Name.Space {
-				attrPrefix = k
-				break
+		if attr.Name.Space == "http://www.w3.org/XML/1998/namespace" {
+			attrPrefix = "xml"
+		} else {
+			for k, v := range elt.Namespaces {
+				if v == attr.Name.Space {
+					attrPrefix = k
+					break
+				}
 			}
 		}
-		attr.Name.Local = attrPrefix + ":" + attr.Name.Local
+		if attrPrefix != "" {
+			attr.Name.Local = attrPrefix + ":" + attr.Name.Local
+		}
 	}
 	newAttributes = append(newAttributes, attr)
 	elt.attributes = newAttributes
+	elt.attrCache = nil // invalidate cache
 }
 
-// Attributes returns all attributes for this element
-func (elt Element) Attributes() []*Attribute {
+// Attributes returns all attributes for this element.
+// Attribute objects are cached so they have stable IDs across calls.
+func (elt *Element) Attributes() []*Attribute {
+	if elt.attrCache != nil {
+		return elt.attrCache
+	}
 	var attribs []*Attribute
 	for _, xmlattr := range elt.attributes {
-		attr := Attribute{}
-		attr.Name = xmlattr.Name.Local
-		attr.Value = xmlattr.Value
-		attr.Namespace = xmlattr.Name.Space
+		attr := &Attribute{
+			ID:        newID(),
+			Name:      xmlattr.Name.Local,
+			Value:     xmlattr.Value,
+			Namespace: xmlattr.Name.Space,
+			Parent:    elt,
+		}
 		for k, v := range elt.Namespaces {
 			if v == xmlattr.Name.Space {
 				attr.Prefix = k
 			}
 		}
-		attribs = append(attribs, &attr)
+		attribs = append(attribs, attr)
 	}
+	elt.attrCache = attribs
 	return attribs
 }
 
@@ -233,6 +308,11 @@ func (elt *Element) setParent(n XMLNode) {
 
 // getID returns the ID of this node
 func (elt *Element) getID() int {
+	return elt.ID
+}
+
+// GetID returns the ID of this node.
+func (elt *Element) GetID() int {
 	return elt.ID
 }
 
@@ -328,6 +408,11 @@ func (cd CharData) getID() int {
 	return cd.ID
 }
 
+// GetID returns the ID of this node.
+func (cd CharData) GetID() int {
+	return cd.ID
+}
+
 // Comment is a string
 type Comment struct {
 	ID       int
@@ -350,6 +435,11 @@ func (cmt Comment) Children() []XMLNode {
 
 // getID returns the ID of this node
 func (cmt Comment) getID() int {
+	return cmt.ID
+}
+
+// GetID returns the ID of this node.
+func (cmt Comment) GetID() int {
 	return cmt.ID
 }
 
@@ -379,6 +469,11 @@ func (pi ProcInst) getID() int {
 	return pi.ID
 }
 
+// GetID returns the ID of this node.
+func (pi ProcInst) GetID() int {
+	return pi.ID
+}
+
 // XMLDocument represents an XML file for decoding
 type XMLDocument struct {
 	ID       int
@@ -387,6 +482,21 @@ type XMLDocument struct {
 
 func (xr XMLDocument) String() string {
 	return "<xmldoc>"
+}
+
+// Stringvalue returns the string value of the document node (concatenation of
+// all descendant text nodes), analogous to Element.Stringvalue().
+func (xr *XMLDocument) Stringvalue() string {
+	var sb strings.Builder
+	for _, cld := range xr.children {
+		switch t := cld.(type) {
+		case CharData:
+			sb.WriteString(t.Contents)
+		case *Element:
+			t.appendStringvalue(&sb)
+		}
+	}
+	return sb.String()
 }
 
 // Append appends an XML node to the document.
@@ -424,6 +534,11 @@ func (xr XMLDocument) getID() int {
 	return xr.ID
 }
 
+// GetID returns the ID of this node.
+func (xr XMLDocument) GetID() int {
+	return xr.ID
+}
+
 // toxml returns the XML representation of the document.
 func (xr *XMLDocument) toxml(namespacePrinted map[string]bool) string {
 	var sb strings.Builder
@@ -443,6 +558,7 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 	eltstack := []XMLNode{doc}
 	cur = doc
 	dec := xml.NewDecoder(r)
+	dec.CharsetReader = charsetReader
 
 	for {
 		tok, err = dec.Token()
@@ -487,11 +603,21 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 			cur = tmp
 			eltstack = append(eltstack, cur)
 		case xml.CharData:
+			// Skip whitespace-only text nodes at the document level —
+			// only elements, PIs, and comments are allowed as document children.
+			if _, isDoc := cur.(*XMLDocument); isDoc && strings.TrimSpace(string(v)) == "" {
+				continue
+			}
 			cd := CharData{ID: newID(), Contents: string(v)}
 			if c, ok := cur.(Appender); ok {
 				c.Append(cd)
 			}
 		case xml.ProcInst:
+			// The Go XML decoder returns the XML declaration as a ProcInst
+			// with target "xml", but it is not a processing instruction.
+			if v.Target == "xml" {
+				continue
+			}
 			cp := v.Copy()
 			pi := ProcInst{ID: newID(), Target: cp.Target, Inst: cp.Inst}
 			if c, ok := cur.(Appender); ok {
