@@ -69,6 +69,12 @@ func newID() int {
 	return int(nextID.Add(1))
 }
 
+// NewID returns a unique node ID. Use this when constructing XML nodes
+// programmatically outside of the parser.
+func NewID() int {
+	return newID()
+}
+
 // XMLNode is one of Document, Element, CharData, ProcInst, Comment
 type XMLNode interface {
 	toxml(map[string]bool) string
@@ -237,6 +243,7 @@ func (elt *Element) Append(n XMLNode) {
 		// do nothing
 	}
 	elt.children = append(elt.children, n)
+	n.setParent(elt)
 }
 
 // Children returns all child nodes from elt
