@@ -75,7 +75,7 @@ func NewID() int {
 	return newID()
 }
 
-// XMLNode is one of Document, Element, CharData, ProcInst, Comment
+// XMLNode is one of Document, Element, CharData, ProcInst, Comment, NamespaceNode
 type XMLNode interface {
 	toxml(map[string]bool) string
 	setParent(XMLNode)
@@ -480,6 +480,30 @@ func (pi ProcInst) getID() int {
 func (pi ProcInst) GetID() int {
 	return pi.ID
 }
+
+// NamespaceNode represents an XPath namespace node (prefix → URI binding).
+type NamespaceNode struct {
+	ID     int
+	Prefix string // namespace prefix ("" for default namespace)
+	URI    string // namespace URI
+}
+
+func (ns NamespaceNode) toxml(namespacePrinted map[string]bool) string {
+	return "" // namespace nodes have no XML serialization
+}
+
+func (ns NamespaceNode) setParent(n XMLNode) {}
+
+// Children returns nil — namespace nodes have no children.
+func (ns NamespaceNode) Children() []XMLNode { return nil }
+
+func (ns NamespaceNode) getID() int { return ns.ID }
+
+// GetID returns the ID of this node.
+func (ns NamespaceNode) GetID() int { return ns.ID }
+
+// Stringvalue returns the namespace URI.
+func (ns NamespaceNode) Stringvalue() string { return ns.URI }
 
 // XMLDocument represents an XML file for decoding
 type XMLDocument struct {
