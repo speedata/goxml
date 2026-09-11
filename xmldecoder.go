@@ -155,7 +155,7 @@ func (a Attribute) GetID() int {
 
 // toxml returns the XML representation of the attribute.
 func (a Attribute) toxml(namespacePrinted map[string]bool) string {
-	return a.Name + "=\"" + escapeAttr(a.Value) + "\""
+	return a.Name + "=\"" + EscapeAttr(a.Value) + "\""
 }
 
 // Element represents an XML element
@@ -378,7 +378,7 @@ func (elt *Element) toxml(namespacePrinted map[string]bool) string {
 		sb.WriteByte(' ')
 		sb.WriteString(att.Name.Local)
 		sb.WriteString("=\"")
-		sb.WriteString(escapeAttr(att.Value))
+		sb.WriteString(EscapeAttr(att.Value))
 		sb.WriteByte('"')
 	}
 	if len(elt.children) == 0 {
@@ -403,7 +403,7 @@ type CharData struct {
 
 // toxml returns the XML representation of the string.
 func (cd CharData) toxml(namespacePrinted map[string]bool) string {
-	return escapeText(string(cd.Contents))
+	return EscapeText(string(cd.Contents))
 }
 
 func (cd CharData) setParent(n XMLNode) {
@@ -671,13 +671,15 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 	return doc, nil
 }
 
-// escapeAttr escapes a string for use in an attribute value.
-func escapeAttr(in string) string {
+// EscapeAttr escapes a string for use in a double-quoted attribute value:
+// &, < and " are replaced by their entities.
+func EscapeAttr(in string) string {
 	return attrEntitiesReplacer.Replace(in)
 }
 
-// escapeText escapes a string for use in character data.
-func escapeText(in string) string {
+// EscapeText escapes a string for use in character data: & and < are
+// replaced by their entities, > only within the sequence ]]>.
+func EscapeText(in string) string {
 	return textEntitiesReplacer.Replace(in)
 }
 
