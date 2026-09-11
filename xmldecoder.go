@@ -10,8 +10,13 @@ import (
 )
 
 var (
-	entitiesReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", "\"", "&quot;")
-	nextID           atomic.Int64
+	// Attribute values are delimited by double quotes, so " must be escaped in
+	// addition to & and <.
+	attrEntitiesReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", "\"", "&quot;")
+	// In character data only & and < must be escaped; > only within the
+	// sequence ]]>.
+	textEntitiesReplacer = strings.NewReplacer("&", "&amp;", "<", "&lt;", "]]>", "]]&gt;")
+	nextID               atomic.Int64
 )
 
 // charsetReader returns a reader that converts the named charset to UTF-8.
@@ -150,7 +155,7 @@ func (a Attribute) GetID() int {
 
 // toxml returns the XML representation of the attribute.
 func (a Attribute) toxml(namespacePrinted map[string]bool) string {
-	return a.Name + "=\"" + escape(a.Value) + "\""
+	return a.Name + "=\"" + escapeAttr(a.Value) + "\""
 }
 
 // Element represents an XML element
@@ -373,7 +378,7 @@ func (elt *Element) toxml(namespacePrinted map[string]bool) string {
 		sb.WriteByte(' ')
 		sb.WriteString(att.Name.Local)
 		sb.WriteString("=\"")
-		sb.WriteString(escape(att.Value))
+		sb.WriteString(escapeAttr(att.Value))
 		sb.WriteByte('"')
 	}
 	if len(elt.children) == 0 {
@@ -398,7 +403,7 @@ type CharData struct {
 
 // toxml returns the XML representation of the string.
 func (cd CharData) toxml(namespacePrinted map[string]bool) string {
-	return escape(string(cd.Contents))
+	return escapeText(string(cd.Contents))
 }
 
 func (cd CharData) setParent(n XMLNode) {
@@ -666,8 +671,14 @@ func Parse(r io.Reader) (*XMLDocument, error) {
 	return doc, nil
 }
 
-func escape(in string) string {
-	return entitiesReplacer.Replace(in)
+// escapeAttr escapes a string for use in an attribute value.
+func escapeAttr(in string) string {
+	return attrEntitiesReplacer.Replace(in)
+}
+
+// escapeText escapes a string for use in character data.
+func escapeText(in string) string {
+	return textEntitiesReplacer.Replace(in)
 }
 
 // SortByDocumentOrder sorts the nodes by document order.

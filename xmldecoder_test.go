@@ -128,6 +128,51 @@ func TestParseLatin1RoundTrip(t *testing.T) {
 	}
 }
 
+func TestEscapeText(t *testing.T) {
+	// In character data, " and ' must not be escaped (issue #3); & and <
+	// must be, > only within the sequence ]]>.
+	testdata := []struct {
+		input string
+		want  string
+	}{
+		{`<data><name>AO "Banana"</name></data>`, `<data><name>AO "Banana"</name></data>`},
+		{`<data>it's 1 &lt; 2 &amp; 3 &gt; 2</data>`, `<data>it's 1 &lt; 2 &amp; 3 > 2</data>`},
+		{`<data>a ]]&gt; b</data>`, `<data>a ]]&gt; b</data>`},
+		{`<data>a ] ]> b</data>`, `<data>a ] ]> b</data>`},
+	}
+	for _, td := range testdata {
+		doc, err := Parse(strings.NewReader(td.input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		root, err := doc.Root()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := root.ToXML(); got != td.want {
+			t.Errorf("ToXML(%s): got %s, want %s", td.input, got, td.want)
+		}
+	}
+}
+
+func TestEscapeAttribute(t *testing.T) {
+	// Attribute values are delimited by double quotes, so " must be escaped
+	// in addition to & and <.
+	input := `<data name="AO &quot;Banana&quot; &amp; Co &lt;3" other="it's fine" />`
+	doc, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := doc.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `<data name="AO &quot;Banana&quot; &amp; Co &lt;3" other="it's fine" />`
+	if got := root.ToXML(); got != want {
+		t.Errorf("ToXML: got %s, want %s", got, want)
+	}
+}
+
 func BenchmarkParse_Small(b *testing.B) {
 	data := smallXML
 	b.ResetTimer()
