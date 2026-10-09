@@ -266,8 +266,8 @@ func (elt *Element) SetAttribute(attr xml.Attr) {
 			newAttributes = append(newAttributes, curattr)
 		}
 	}
-	// add the new attribute
-	if attr.Name.Space != "" {
+	// add the new attribute, unless its name already carries a prefix
+	if attr.Name.Space != "" && !strings.Contains(attr.Name.Local, ":") {
 		attrPrefix := ""
 		if attr.Name.Space == "http://www.w3.org/XML/1998/namespace" {
 			attrPrefix = "xml"
@@ -303,9 +303,17 @@ func (elt *Element) Attributes() []*Attribute {
 			Namespace: xmlattr.Name.Space,
 			Parent:    elt,
 		}
-		for k, v := range elt.Namespaces {
-			if v == xmlattr.Name.Space {
-				attr.Prefix = k
+		if strings.Contains(xmlattr.Name.Local, ":") {
+			// SetAttribute already stored the prefix in the name.
+		} else if xmlattr.Name.Space == "http://www.w3.org/XML/1998/namespace" {
+			// The xml prefix is bound by definition and never
+			// appears among the namespace declarations.
+			attr.Prefix = "xml"
+		} else {
+			for k, v := range elt.Namespaces {
+				if v == xmlattr.Name.Space {
+					attr.Prefix = k
+				}
 			}
 		}
 		attribs = append(attribs, attr)

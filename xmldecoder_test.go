@@ -1,6 +1,7 @@
 package goxml
 
 import (
+	"encoding/xml"
 	"strings"
 	"testing"
 )
@@ -69,6 +70,31 @@ func TestParseLatin1Attributes(t *testing.T) {
 	}
 	if len(want) > 0 {
 		t.Errorf("missing attributes: %v", want)
+	}
+}
+
+// TestXMLPrefixAttribute checks that attributes in the xml namespace get
+// the prefix xml, which is bound without a declaration.
+func TestXMLPrefixAttribute(t *testing.T) {
+	doc, err := Parse(strings.NewReader(`<root xml:lang="en"/>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _ := doc.Root()
+	attrs := root.Attributes()
+	if len(attrs) != 1 {
+		t.Fatalf("got %d attributes, want 1", len(attrs))
+	}
+	if a := attrs[0]; a.Prefix != "xml" || a.Name != "lang" {
+		t.Errorf("got %s:%s, want xml:lang", a.Prefix, a.Name)
+	}
+
+	// A name that already carries the prefix is stored unchanged.
+	elt := NewElement()
+	elt.Name = "e"
+	elt.SetAttribute(xml.Attr{Name: xml.Name{Space: "http://www.w3.org/XML/1998/namespace", Local: "xml:id"}, Value: "a"})
+	if got, want := elt.toxml(map[string]bool{}), `<e xml:id="a" />`; got != want {
+		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
